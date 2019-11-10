@@ -28,9 +28,18 @@ CREDENTIALS_FILE = 'LSComponents.json'
 i_comment = 14
 i_second_url = 12
 
-class TS: #global object with actual terra url and cookies
+
+class TS:  # global object with actual terra url and cookies
+    def __init__(self):
+        self.base = None
+        self.cookies = None
+
     def login(self) -> None:
-        #login here
+        """
+        logins to terra
+        :return:
+        """
+        # login here
         payload = {
             'LoginForm[email]': 'agereth@gmail.com',
             'LoginForm[password]': 'juice87',
@@ -47,14 +56,30 @@ class TS: #global object with actual terra url and cookies
             data=payload,
             allow_redirects=False,
             cookies=coo)
-        #we normally get res.status_code == 302
+
+        # we normally get res.status_code == 302
         self.cookies = res.cookies
         
     def get(self, url: str, *args, **qwargs) -> requests.Response:
+        """
+        gets url with our cookies
+        :param url: url to get
+        :param args: some args
+        :param qwargs: and qwargs
+        :return: request response
+        """
         return requests.get(self.base + url, cookies=self.cookies, *args, **qwargs)
 
-    def post(self, url:str, *args, **qwargs) -> requests.Response :
+    def post(self, url: str, *args, **qwargs) -> requests.Response:
+        """
+        posts with our cookies
+        :param url: url to post
+        :param args: some args
+        :param qwargs: and qwargs
+        :return: request responce
+        """
         return requests.post(self.base + url, cookies=self.cookies, *args, **qwargs)
+
 
 TerraSession = TS()
 
@@ -100,23 +125,22 @@ def get_search_links_for_row(row: list, i_type: int, i_value: int, i_footprint: 
         search_links = get_search_links_from_page(position)
         search_links = [link + "%26ef%255B1202026%255D%255Bvalue%255D%255B%255D%3D%25C2%25B1%2B1%2525"
                         for link in search_links]
-    #for capacitors
+    # for capacitors
     if row[i_type] == 'Capacitor':
         # add correct isolator
         if 'u' in row[i_value] or 'n' in row[i_value]:
             search_links = get_search_links_from_page(position + ' x7r')
             search_links.extend(get_search_links_from_page(position + ' x5r'))
         else:
-            #fix terra bug
+            # fix terra bug
             position = position.lower()
             position = position.replace('pf', ' pf')
             search_links = get_search_links_from_page(position)
     if row[i_type] == 'Inductor':
         search_links = get_search_links_from_page(position)
 
-
     # correct 0603 cases: remove metric 0603
-    new_links: List[str]= list()
+    new_links: List[str] = list()
     for link in search_links:
         if '0603' in position:
             new_links.append(correct_link_for_0603(link))
@@ -202,7 +226,7 @@ def get_actual_info(product_id: str) -> Tuple[int, dict, str]:
     res = TerraSession.get(url)
 
     soup = BeautifulSoup(res.text)
-    actual: str = soup.find('div', {'class': 'box-title'})
+    actual: Union[str, List[Tag]] = soup.find('div', {'class': 'box-title'})
     partnumber: str = soup.find('h1', {'class': 'truncate'})
     try:
         partnumber = partnumber.contents[0].split()[0]
@@ -239,7 +263,7 @@ def get_delivery_info(product_id: str) -> Tuple[int, int, str, dict]:
         if 'ПОД ЗАКАЗ' in actual.contents[0]:
             quantity_str: str = actual.contents[1].contents[0]
             quantity: int = int(quantity_str.replace("шт.", ""))
-            prognosis_str: str = delivery_data[1].contents[0]
+            prognosis_str: Union[str, List[str]] = delivery_data[1].contents[0]
             prognosis = -1
             if "недел" in prognosis_str:
                 prognosis_type: str = "Weeks"
@@ -257,7 +281,7 @@ def get_delivery_info(product_id: str) -> Tuple[int, int, str, dict]:
             price_data = [tag for tag in soup.find('span', {'class': 'prices'}) if isinstance(tag, Tag)]
             prices_delivery = dict()
             for price in price_data:
-                 prices_delivery[int(price.attrs['data-count'])] = float(price.attrs['data-price'])
+                prices_delivery[int(price.attrs['data-count'])] = float(price.attrs['data-price'])
             return quantity, prognosis, prognosis_type, prices_delivery
     return 0, 0, "", {}
 
@@ -311,7 +335,7 @@ def get_min_price_actual_with_quantity(products: List[Product], quantity: int) -
     return "", -1, ""
 
 
-def get_min_price_quantity_data(products: List[Product], quantity: int, date: int) -> Tuple[float, str, int, str]:
+def get_min_price_quantity_data(products: List[Product], quantity: int, date: int) -> Tuple[float, str, float, str]:
     """
     get best offer for quanity units with no more then date days of delivery
     :param products: list if offers
@@ -349,7 +373,8 @@ def get_min_price_quantity_data(products: List[Product], quantity: int, date: in
         return min_delivery_price, min_delivery_id, min_delivery_prognosis, min_partnumber
 
 
-def get_new_row(row: List[str], i_url: int, i_price: int, i_pn:int,  best_price_id: str, best_price: float, comment: str, pn: str, comment_text: str) -> List[Union[int, float, str]]:
+def get_new_row(row: List[str], i_url: int, i_price: int, i_pn: int,  best_price_id: str, best_price: float,
+                comment: str, pn: str, comment_text: str) -> List[Union[int, float, str]]:
     """
 
     :param comment_text: str with comments
@@ -384,7 +409,7 @@ def get_new_row(row: List[str], i_url: int, i_price: int, i_pn:int,  best_price_
     return new_row
 
 
-def get_terra_by_pn(partnumber:str) -> Tuple[float, str]:
+def get_terra_by_pn(partnumber: str) -> Tuple[float, str]:
     """
     gets data from terra by partnumber
     :param partnumber:
@@ -404,6 +429,7 @@ def get_terra_by_pn(partnumber:str) -> Tuple[float, str]:
             tag = soup.find('span', {'class': 'price-single price-active'})
             terra_price = float(tag.attrs['data-price'])
     return terra_price, terra_url
+
 
 def get_onelec_pn(partnumber: str) -> Tuple[float, str]:
     """
@@ -438,7 +464,7 @@ def get_onelec_pn(partnumber: str) -> Tuple[float, str]:
     return onelec_price, onelec_url
 
 
-def get_best_price_from_onelec_terra_by_pn(partnumber: str)->Tuple[float, str, str]:
+def get_best_price_from_onelec_terra_by_pn(partnumber: str) -> Tuple[float, str, str]:
     """
     function gets best price from onelec and terra by partnumber and selects best
     :param partnumber: partnumber for spreadsheet
@@ -464,6 +490,7 @@ def get_best_price_by_pn(value: str) -> Tuple[float, str, str, str]:
     link = r.url
     products = list()
     comment = ""
+    pn = ""
     if 'catalog' not in link:
         soup = BeautifulSoup(r.text)
         links = soup.find('ul', {'class': "search-list"})
@@ -501,24 +528,22 @@ def get_pn_from_terra(url: str):
     return pn.contents[0].split()[0]
 
 
-def main(spreadsheetId, first, last):
+def main(spreadsheet_id: str, first: int, last: int):
     """
     gets position data from spreadsheet, searches it within terraelectronica, and adds it back to spreadshhet
-    :param spreadsheetId: Id of spreadsheet with data
+    :param spreadsheet_id: Id of spreadsheet with data
     :param first: number of first string with data
     :param last: number of last string with data
     :return:
     """
-    TerraSession.login() # login to terraelectronica
-
+    TerraSession.login()  # login to terraelectronica
     # move to separate function
     credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE,
                                                                    ['https://www.googleapis.com/auth/spreadsheets',
                                                                     'https://www.googleapis.com/auth/drive'])
-    httpAuth = credentials.authorize(httplib2.Http())
-    service = googleapiclient.discovery.build('sheets', 'v4', http=httpAuth)
-
-    answer = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range='a1:o1').execute()
+    http_auth = credentials.authorize(httplib2.Http())
+    service = googleapiclient.discovery.build('sheets', 'v4', http=http_auth)
+    answer = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range='a1:o1').execute()
     columns = answer['values'][0]
     # move to separate function
     i_type = get_index(columns, "Type")
@@ -532,7 +557,7 @@ def main(spreadsheetId, first, last):
     i_url = get_index(columns, "URL")
     i_price = get_index(columns, "Price")
 
-    answer = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range='a%i:o%i' % (first, last)).execute()
+    answer = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range='a%i:o%i' % (first, last)).execute()
     values = answer.get('values', [])
     for (index, row) in enumerate(values):
         if row[i_type].lower() in ("resistor", 'capacitor', 'inductor'):
@@ -555,11 +580,14 @@ def main(spreadsheetId, first, last):
                         text_comment += ' 1%'
                     if row[i_type] == 'Capacitor':
                         text_comment += ", x5r or x7r or np0 isolator"
-                    best_price, best_price_id, best_price_date, best_pn = get_min_price_quantity_data(products, quantity, 5)
-                    new_row = get_new_row(row, i_url, i_price, i_partnumber, terra_base+r'product/'+best_price_id, best_price, "", best_pn, text_comment)
+                    best_price, best_price_id, best_price_date, best_pn = get_min_price_quantity_data(products,
+                                                                                                      quantity, 5)
+                    new_row = get_new_row(row, i_url, i_price, i_partnumber, terra_base+r'product/'+best_price_id,
+                                          best_price, "", best_pn, text_comment)
                     request_body = {"valueInputOption": "RAW",
                                     "data": [{"range": 'a%i:o%i' % (index+first, index+first), "values": [new_row]}]}
-                    request = service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheetId, body=request_body)
+                    request = service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheetId,
+                                                                          body=request_body)
                     _ = request.execute()
                     continue
 
@@ -567,10 +595,13 @@ def main(spreadsheetId, first, last):
             if row[i_partnumber]:
                 best_price, best_url, comment = get_best_price_from_onelec_terra_by_pn(row[i_partnumber])
                 if best_price != 0:
-                    new_row = get_new_row(row, i_url, i_price, i_partnumber, best_url, best_price, comment, row[i_partnumber], "")
+                    new_row = get_new_row(row, i_url, i_price, i_partnumber, best_url, best_price, comment,
+                                          row[i_partnumber], "")
                     request_body = {"valueInputOption": "RAW",
-                                    "data": [{"range": 'a%i:o%i' % (values.index(row) + first, values.index(row) + first), "values": [new_row]}]}
-                    request = service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheetId, body=request_body)
+                                    "data": [{"range": 'a%i:o%i' % (values.index(row) + first,
+                                                                    values.index(row) + first), "values": [new_row]}]}
+                    request = service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheet_id,
+                                                                          body=request_body)
                     _ = request.execute()
                     continue
         if row[i_type] == 'PN':
