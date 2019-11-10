@@ -28,6 +28,36 @@ CREDENTIALS_FILE = 'LSComponents.json'
 i_comment = 14
 i_second_url = 12
 
+class TS: #global object with actual terra url and cookies
+    def login(self) -> None:
+        #login here
+        payload = {
+            'LoginForm[email]': 'agereth@gmail.com',
+            'LoginForm[password]': 'juice87',
+            'uid': '',
+            'LoginForm[ReturnURL]': '/'
+        }
+        # if we are in spb, there is redirect to https://spb.terraelectronica.ru
+        r = requests.get(terra_base)
+        coo = r.cookies
+        self.base = r.url
+
+        res = requests.post(
+            self.base + "signin",
+            data=payload,
+            allow_redirects=False,
+            cookies=coo)
+        #we normally get res.status_code == 302
+        self.cookies = res.cookies
+        
+    def get(self, url: str, *args, **qwargs) -> requests.Response:
+        return requests.get(self.base + url, cookies=self.cookies, *args, **qwargs)
+
+    def post(self, url:str, *args, **qwargs) -> requests.Response :
+        return requests.post(self.base + url, cookies=self.cookies, *args, **qwargs)
+
+TerraSession = TS()
+
 
 def get_index(columns: list, name: str) -> int:
     """
@@ -102,8 +132,8 @@ def get_search_links_from_page(search_text) -> List[str]:
     :return: list of links with search results
     """
     search_query: str = "+".join(search_text.split())
-    url: str = terra_base + "search?text=" + search_query
-    r = requests.get(url)
+    url: str = "search?text=" + search_query
+    r = TerraSession.get(url)
     soup = BeautifulSoup(r.text)
     links = soup.find('ul', {'class': "search-list"})
     try:
@@ -139,25 +169,19 @@ def get_product_list(link: str) -> List[str]:
     :param link: search link
     :return: list of product ids
     """
-    url: str = terra_base + link
+    url: str = link
     new_url = url + r'&f%5Bpresent%5D=1'
-    payload = {
-        'LoginForm[email]': 'agereth@gmail.com',
-        'LoginForm[password]': 'juice87'
-    }
-    with requests.Session() as s:
-        p = s.post('https://www.terraelectronica.ru/signin', data=payload)
-        r = s.get(new_url)
-        if r.status_code == 404:
-            new_url = url + r'?f%5Bpresent%5D=1'
-            r = s.get(new_url)
+    
+    r = TerraSession.get(new_url)
+    if r.status_code == 404:
+        r = TerraSession.get(new_url)
     soup = BeautifulSoup(r.text, 'html.parser')
     pages = soup.findAll('li', {'class': 'waves-effect'})
     products = list()
     if pages:
         for page in set(pages):
-            url = terra_base + page.contents[0].attrs['href']
-            r = s.get(url)
+            url = page.contents[0].attrs['href']
+            r = TerraSession.get(url)
             soup = BeautifulSoup(r.text)
             links = soup.findAll('td', {'class': 'table-item-name'})
             products.extend([link.attrs['data-code'] for link in links])
@@ -173,14 +197,10 @@ def get_actual_info(product_id: str) -> Tuple[int, dict, str]:
     :param product_id: product id
     :return: quantity, dictionary with prices, partnumber
     """
-    url: str = terra_base + "product/" + product_id
-    payload = {
-        'LoginForm[email]': 'agereth@gmail.com',
-        'LoginForm[password]': 'juice87'
-    }
-    with requests.Session() as s:
-        p = s.post('https://www.terraelectronica.ru/signin', data=payload)
-        res = s.get(url)
+    url: str = "product/" + product_id
+    
+    res = TerraSession.get(url)
+
     soup = BeautifulSoup(res.text)
     actual: str = soup.find('div', {'class': 'box-title'})
     partnumber: str = soup.find('h1', {'class': 'truncate'})
@@ -206,7 +226,7 @@ def get_delivery_info(product_id: str) -> Tuple[int, int, str, dict]:
     :return: quantity available, number of delivery units, delivery unit: day or week, delivery prices
     """
     data: str = '{"jsonrpc":"2.0","method":"update_offers","params":{"code":%s},"id":"objUpdateOffers||1"}' % product_id
-    response = requests.post('https://www.terraelectronica.ru/services', data=data)
+    response = TerraSession.post('services', data=data)
     res: str = response.text
     res = res.split('"best_offer":')[1]
     res = res.replace(r'\"', r'"')
@@ -370,26 +390,19 @@ def get_terra_by_pn(partnumber:str) -> Tuple[float, str]:
     :param partnumber:
     :return: price, url
     """
-    payload = {
-        'LoginForm[email]': 'agereth@gmail.com',
-        'LoginForm[password]': 'juice87'
-    }
-
-    # Use 'with' to ensure the session context is closed after use.
-    with requests.Session() as s:
-        #s.auth = ('agereth@gmail.com', 'juice87')
-        p = s.post('https://www.terraelectronica.ru/signin', data=payload)
-        url: str = terra_base + "search?text=" + partnumber
-        res = s.get(url)
-        terra_url: str = ""
-        terra_price: float = 0
-        if 'product' in res.url:
-            terra_url = res.url
-            soup = BeautifulSoup(res.text)
-            tags = soup.find('div', {'class': 'fast-buy'})
-            if tags:
-                tag = soup.find('span', {'class': 'price-single price-active'})
-                terra_price = float(tag.attrs['data-price'])
+    
+    url: str = "search?text=" + partnumber
+    # url = 'https://spb.terraelectronica.ru/user/profile'
+    res = TerraSession.get(url)
+    terra_url: str = ""
+    terra_price: float = 0
+    if 'product' in res.url:
+        terra_url = res.url
+        soup = BeautifulSoup(res.text)
+        tags = soup.find('div', {'class': 'fast-buy'})
+        if tags:
+            tag = soup.find('span', {'class': 'price-single price-active'})
+            terra_price = float(tag.attrs['data-price'])
     return terra_price, terra_url
 
 def get_onelec_pn(partnumber: str) -> Tuple[float, str]:
@@ -446,16 +459,9 @@ def get_best_price_by_pn(value: str) -> Tuple[float, str, str, str]:
     :param value: value to search
     :return: price, product id, comment (with more expensive product)
     """
-    url: str = terra_base + "search?text=" + value
-    payload = {
-        'LoginForm[email]': 'agereth@gmail.com',
-        'LoginForm[password]': 'juice87'
-    }
-
-    with requests.Session() as s:
-        _ = s.post('https://www.terraelectronica.ru/signin', data=payload)
-        r = s.get(url)
-        link = r.url
+    url: str = "search?text=" + value
+    r = TerraSession.get(url)
+    link = r.url
     products = list()
     comment = ""
     if 'catalog' not in link:
@@ -488,13 +494,7 @@ def get_pn_from_terra(url: str):
     :param url: link at product
     :return: Partnumber
     """
-    payload = {
-        'LoginForm[email]': 'agereth@gmail.com',
-        'LoginForm[password]': 'juice87'
-    }
-    with requests.Session() as s:
-        p = s.post('https://www.terraelectronica.ru/signin', data=payload)
-        res = s.get(url)
+    res = TerraSession.get(url)
 
     soup = BeautifulSoup(res.text)
     pn = soup.find('h1')
@@ -509,6 +509,8 @@ def main(spreadsheetId, first, last):
     :param last: number of last string with data
     :return:
     """
+    TerraSession.login() # login to terraelectronica
+
     # move to separate function
     credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE,
                                                                    ['https://www.googleapis.com/auth/spreadsheets',
